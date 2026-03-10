@@ -46,13 +46,12 @@ class AppClick {
         // Позволяет игнорировать действия после destroy().
         this.isDestroyed = false;
 
-        // Текущее состояние блока: открыт / закрыт.
-        this.isOpen = false;
-
         // Находим связанные DOM-элементы и параметры поведения.
         this.refs = this.resolveRefs(this.el);
         if (!this.refs) return;
 
+        // Текущее состояние блока: открыт / закрыт.
+        this.isOpen = this.refs.target.classList.contains(this.options.showClass);
         // Регистрируем экземпляр в общем реестре.
         AppClick.instances.set(this.el, this);
 
@@ -79,7 +78,8 @@ class AppClick {
             AppClick.instances.forEach((instance) => {
                 if (!instance.isOpen) return;
                 if (!instance.options.closeOnEscape) return;
-                instance.close(null, 'esc');
+
+                instance.close(null, true);
             });
         });
 
@@ -98,6 +98,26 @@ class AppClick {
             // Получаем связанный экземпляр по DOM-элементу кнопки.
             const instance = AppClick.instances.get(button);
             if (!instance || instance.isDestroyed) return;
+
+            // Ищем уже открытую fixed-секцию с той же fixed-группой
+            let openedSameFixedInstance = null;
+            AppClick.instances.forEach((item) => {
+                if (!item.isOpen) return;
+                if (item === instance) return;
+                if (!item.refs.fixed) return;
+                if (item.refs.fixed === instance.refs.fixed) {
+                    openedSameFixedInstance = item;
+                }
+            });
+
+            // Если нашли открытую fixed-секцию из той же группы,
+            // то переключаемся между секциями внутри группы
+            if (openedSameFixedInstance) {
+                openedSameFixedInstance.close(evt);
+                instance.open(evt);
+                instance.options.onClick?.(evt, instance);
+                return;
+            }
 
             instance.handleButtonClick(evt);
             return;
@@ -170,11 +190,11 @@ class AppClick {
         // toggle — переключение,
         // add — только открыть,
         // remove — только закрыть.
-        const option = el.getAttribute('data-click-option') || 'toggle';
+        const option = el.getAttribute('data-click-option') || 'add';
 
         // Фиксированный режим:
         // если установлен, блок не будет закрываться по внешнему клику.
-        const fixed = el.hasAttribute('data-click-fixed');
+        const fixed = el.getAttribute('data-click-fixed');
 
         // Классы, которые будут применяться к `<body>` при открытии блока.
         const body = (el.getAttribute('data-click-body') || '')
@@ -246,6 +266,7 @@ class AppClick {
             AppClick.closeOthers(this);
         }
 
+
         this.refs.body.forEach((cls) => document.body.classList.add(cls));
 
         this.isOpen = true;
@@ -268,11 +289,11 @@ class AppClick {
         this.options.onOpen?.(evt, this);
     }
 
-    close(evt = null, esc = null) {
+    close(evt = null, reason = null) {
         // Если уже закрыт — повторно ничего не делаем.
         if (!this.isOpen) return;
         // Если нажатие на escape и у нас fixed, ничего не делаем.
-        if (esc && this.refs.fixed) return;
+        if (reason && this.refs.fixed) return;
 
         this.refs.body.forEach((cls) => document.body.classList.remove(cls));
 
@@ -313,7 +334,7 @@ class AppClick {
         // Отражаем текущее состояние элемента.
         this.el.setAttribute('aria-expanded', this.isOpen ? 'true' : 'false');
         this.el.setAttribute('aria-controls', targetId);
-        this.refs.target.tabIndex = 0;
+        this.refs.target.tabIndex = -1;
     }
 
     ensureTargetId(target) {
