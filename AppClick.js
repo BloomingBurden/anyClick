@@ -79,7 +79,7 @@ class AppClick {
             AppClick.instances.forEach((instance) => {
                 if (!instance.isOpen) return;
                 if (!instance.options.closeOnEscape) return;
-                instance.close();
+                instance.close(null, 'esc');
             });
         });
 
@@ -177,14 +177,21 @@ class AppClick {
         const fixed = el.hasAttribute('data-click-fixed');
 
         // Классы, которые будут применяться к `<body>` при открытии блока.
-        const body = el.getAttribute('data-click-body') ?? null;
+        const body = (el.getAttribute('data-click-body') || '')
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean);
+
+        // Включен или отключен inert на target цели. По умолчанию включен.
+        const inert = el.getAttribute('data-click-inert') === 'false' ? false : true;
 
         return {
             section,
             target,
             option,
             fixed,
-            body
+            body,
+            inert
         };
     }
 
@@ -239,10 +246,7 @@ class AppClick {
             AppClick.closeOthers(this);
         }
 
-        if (this.refs.body) {
-            const split = this.refs.body.split(',');
-            split.forEach((item) => document.body.classList.add(item.trim()));
-        }
+        this.refs.body.forEach((cls) => document.body.classList.add(cls));
 
         this.isOpen = true;
 
@@ -252,23 +256,25 @@ class AppClick {
         this.el.classList.add(this.options.activeBtnClass);
 
         // Снимаем inert, чтобы содержимое стало доступным для фокуса и взаимодействия.
-        this.refs.target.removeAttribute('inert');
+        if (this.refs.inert) this.refs.target.removeAttribute('inert');
 
         // Обновляем aria-expanded для assistive-технологий.
         this.el.setAttribute('aria-expanded', 'true');
+
+        // Переходим фокусом на target.
+        setTimeout(() => this.refs.target.focus(), 50);
 
         // Пользовательский хук на открытие.
         this.options.onOpen?.(evt, this);
     }
 
-    close(evt = null) {
+    close(evt = null, esc = null) {
         // Если уже закрыт — повторно ничего не делаем.
         if (!this.isOpen) return;
+        // Если нажатие на escape и у нас fixed, ничего не делаем.
+        if (esc && this.refs.fixed) return;
 
-        if (this.refs.body) {
-            const split = this.refs.body.split(',');
-            split.forEach((item) => document.body.classList.remove(item.trim()));
-        }
+        this.refs.body.forEach((cls) => document.body.classList.remove(cls));
 
         this.isOpen = false;
 
@@ -278,10 +284,13 @@ class AppClick {
         this.el.classList.remove(this.options.activeBtnClass);
 
         // Делаем target неинтерактивным.
-        this.refs.target.setAttribute('inert', '');
+        if (this.refs.inert) this.refs.target.setAttribute('inert', '');
 
         // Обновляем aria-expanded.
         this.el.setAttribute('aria-expanded', 'false');
+
+        // Переходим фокусом на кнопку обратно.
+        setTimeout(() => this.el.focus(), 50);
 
         // Пользовательский хук на закрытие.
         this.options.onClose?.(evt, this);
@@ -304,6 +313,7 @@ class AppClick {
         // Отражаем текущее состояние элемента.
         this.el.setAttribute('aria-expanded', this.isOpen ? 'true' : 'false');
         this.el.setAttribute('aria-controls', targetId);
+        this.refs.target.tabIndex = 0;
     }
 
     ensureTargetId(target) {
